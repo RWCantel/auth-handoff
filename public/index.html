@@ -317,6 +317,14 @@ const SERVICES = [
 ];
 
 // ── Utils ──
+
+function authHeaders(extra={}) {
+  return {...extra, 'Authorization': 'Bearer ' + (window.API_TOKEN||'')};
+}
+function authFetch(url, opts={}) {
+  opts.headers = authHeaders(opts.headers||{});
+  return fetch(url, opts);
+}
 function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');}
 function toast(m,t='success'){const e=document.getElementById('toast');e.textContent=m;e.className=`toast ${t} show`;setTimeout(()=>e.classList.remove('show'),2500);}
 function timeAgo(iso){const d=Date.now()-new Date(iso).getTime(),m=Math.floor(d/60000);if(m<1)return'just now';if(m<60)return m+'m ago';const h=Math.floor(m/60);if(h<24)return h+'h ago';return Math.floor(h/24)+'d ago';}
@@ -334,15 +342,16 @@ document.querySelectorAll('.home-tab').forEach(tab=>{
 // ── Sessions ──
 async function loadSessions(){
   try{
-    const r=await fetch('/api/sessions'),s=await r.json();
+    const r=await authFetch('/api/sessions'),s=await r.json();
     document.getElementById('sessionCount').textContent=s.length;
     document.getElementById('sessionBadge').textContent=s.length;
     const l=document.getElementById('sessionsList');
     if(!s.length){l.innerHTML='<div class="empty-state"><div class="icon">🌐</div><p>No sessions yet.<br>Log in above and tap Capture.</p></div>';return;}
-    l.innerHTML=s.map(x=>`<div class="item-card"><div class="item-info"><h3>${x.domain||x.name}</h3><span class="item-meta">${x.cookieCount} cookies · ${timeAgo(x.capturedAt)}</span></div><div style="display:flex;gap:8px;align-items:center"><button class="btn-delete" onclick="deleteSession('${x.id}')">Delete</button><div class="item-dot"></div></div></div>`).join('');
+    l.innerHTML=s.map(x=>`<div class="item-card"><div class="item-info"><h3>${x.domain||x.name}</h3><span class="item-meta">${x.cookieCount} cookies · captured ${timeAgo(x.capturedAt)}</span></div><div style="display:flex;gap:6px;align-items:center"><button class="btn-delete" style="background:var(--acd);color:var(--ac);border-color:#00d4aa33" onclick="reOpenSession('${x.url}')">↻</button><button class="btn-delete" onclick="deleteSession('${x.id}')">Delete</button></div></div>`).join('');
   }catch{}
 }
-async function deleteSession(id){await fetch(`/api/sessions/${id}`,{method:'DELETE'});toast('Deleted');loadSessions();}
+function reOpenSession(url){startSession(url);}
+async function deleteSession(id){await authFetch(`/api/sessions/${id}`,{method:'DELETE'});toast('Deleted');loadSessions();}
 
 // ── API Keys ──
 function renderServiceList(filter=''){
@@ -370,7 +379,7 @@ function selectService(svc){
 
 async function loadKeys(){
   try{
-    const r=await fetch('/api/keys'),keys=await r.json();
+    const r=await authFetch('/api/keys'),keys=await r.json();
     document.getElementById('keyCount').textContent=keys.length;
     document.getElementById('keyBadge').textContent=keys.length;
     const l=document.getElementById('keysList');
@@ -378,7 +387,7 @@ async function loadKeys(){
     l.innerHTML=keys.map(k=>`<div class="item-card"><div class="item-info"><h3>${k.label||k.service}</h3><span class="item-meta" style="font-size:10px">${k.maskedValue} · ${timeAgo(k.savedAt)}</span></div><div style="display:flex;gap:8px;align-items:center"><button class="btn-delete" onclick="deleteKey('${k.service}')">Delete</button><div class="item-dot"></div></div></div>`).join('');
   }catch{}
 }
-async function deleteKey(service){await fetch(`/api/keys/${service}`,{method:'DELETE'});toast('Key deleted');loadKeys();}
+async function deleteKey(service){await authFetch(`/api/keys/${service}`,{method:'DELETE'});toast('Key deleted');loadKeys();}
 
 document.getElementById('btnAddKey').addEventListener('click',()=>{
   selectedService=null;
@@ -397,7 +406,7 @@ document.getElementById('btnSaveKey').addEventListener('click',async()=>{
   const value=document.getElementById('keyValueInput').value.trim();
   if(!value)return toast('Enter an API key','error');
   const label=document.getElementById('keyLabelInput').value.trim()||selectedService.name;
-  const r=await fetch('/api/keys',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({service:selectedService.id,label,value})});
+  const r=await authFetch('/api/keys',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({service:selectedService.id,label,value})});
   if(r.ok){toast('Key saved');document.getElementById('keyModal').classList.remove('active');loadKeys();}
   else toast('Failed to save','error');
 });

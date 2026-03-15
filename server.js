@@ -9,6 +9,32 @@ const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
 
+// ── API Auth Token ──
+const TOKEN_FILE = path.join(__dirname, '.api-token');
+
+function getApiToken() {
+  if (fs.existsSync(TOKEN_FILE)) {
+    return fs.readFileSync(TOKEN_FILE, 'utf8').trim();
+  }
+  const token = crypto.randomBytes(32).toString('hex');
+  fs.writeFileSync(TOKEN_FILE, token, { mode: 0o600 });
+  console.log('\n  ⚠️  API token generated (first run):');
+  console.log(`  Token: ${token}`);
+  console.log('  Add to your bot config or use: curl -H "Authorization: Bearer <token>" ...\n');
+  return token;
+}
+
+const API_TOKEN = process.env.API_TOKEN || getApiToken();
+
+function requireAuth(req, res, next) {
+  // Skip auth for the PWA itself (static files + WebSocket)
+  const auth = req.headers['authorization'];
+  if (!auth || !auth.startsWith('Bearer ') || auth.slice(7) !== API_TOKEN) {
+    return res.status(401).json({ error: 'Unauthorized. Set Authorization: Bearer <token>' });
+  }
+  next();
+}
+
 // ── Key Vault Encryption ──
 const KEYS_DIR = path.join(__dirname, 'keys');
 const SALT_FILE = path.join(__dirname, '.key-salt');
@@ -61,12 +87,18 @@ const SCREENSHOT_INTERVAL = 350;
 
 if (!fs.existsSync(COOKIES_DIR)) fs.mkdirSync(COOKIES_DIR, { recursive: true });
 
+// Serve PWA - inject token into index.html so the UI can authenticate
+app.get('/', (req, res) => {
+  let html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
+  html = html.replace('</head>', `<script>window.API_TOKEN="${API_TOKEN}";</script></head>`);
+  res.send(html);
+});
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
 const sessions = new Map();
 
-app.get('/api/sessions', (req, res) => {
+app.get('/api/sessions', requireAuth, (req, res) => {
   const files = fs.readdirSync(COOKIES_DIR).filter(f => f.endsWith('.json'));
   const list = files.map(f => {
     const data = JSON.parse(fs.readFileSync(path.join(COOKIES_DIR, f), 'utf8'));
@@ -75,19 +107,19 @@ app.get('/api/sessions', (req, res) => {
   res.json(list);
 });
 
-app.get('/api/sessions/:id/cookies', (req, res) => {
+app.get('/api/sessions/:id/cookies', requireAuth, (req, res) => {
   const fp = path.join(COOKIES_DIR, `${req.params.id}.json`);
   if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Not found' });
   res.json(JSON.parse(fs.readFileSync(fp, 'utf8')));
 });
 
-app.delete('/api/sessions/:id', (req, res) => {
+app.delete('/api/sessions/:id', requireAuth, (req, res) => {
   const fp = path.join(COOKIES_DIR, `${req.params.id}.json`);
   if (fs.existsSync(fp)) fs.unlinkSync(fp);
   res.json({ deleted: true });
 });
 
-app.get('/api/sessions/:id/cookies.txt', (req, res) => {
+app.get('/api/sessions/:id/cookies.txt', requireAuth, (req, res) => {
   const fp = path.join(COOKIES_DIR, `${req.params.id}.json`);
   if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Not found' });
   const data = JSON.parse(fs.readFileSync(fp, 'utf8'));
@@ -100,13 +132,13 @@ app.get('/api/sessions/:id/cookies.txt', (req, res) => {
   res.send(lines.join('\n'));
 });
 
-app.get('/api/viewport', (req, res) => {
+app.get('/api/viewport', requireAuth, (req, res) => {
   res.json({ width: 412, height: 915 });
 });
 
 // ── API Key Vault endpoints ──
 
-app.get('/api/keys', (req, res) => {
+app.get('/api/keys', requireAuth, (req, res) => {
   const files = fs.readdirSync(KEYS_DIR).filter(f => f.endsWith('.json'));
   const list = files.map(f => {
     const raw = JSON.parse(fs.readFileSync(path.join(KEYS_DIR, f), 'utf8'));
@@ -116,7 +148,7 @@ app.get('/api/keys', (req, res) => {
   res.json(list);
 });
 
-app.get('/api/keys/:service', (req, res) => {
+app.get('/api/keys/:service', requireAuth, (req, res) => {
   const fp = path.join(KEYS_DIR, `${req.params.service}.json`);
   if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Key not found' });
   const raw = JSON.parse(fs.readFileSync(fp, 'utf8'));
@@ -124,7 +156,7 @@ app.get('/api/keys/:service', (req, res) => {
   res.json({ service: raw.service, label: raw.label, value, savedAt: raw.savedAt });
 });
 
-app.post('/api/keys', (req, res) => {
+app.post('/api/keys', requireAuth, (req, res) => {
   const { service, label, value } = req.body;
   if (!service || !value) return res.status(400).json({ error: 'service and value required' });
   const encrypted = encrypt(value);
@@ -134,7 +166,7 @@ app.post('/api/keys', (req, res) => {
   res.json({ saved: true, service, maskedValue: maskKey(value) });
 });
 
-app.delete('/api/keys/:service', (req, res) => {
+app.delete('/api/keys/:service', requireAuth, (req, res) => {
   const fp = path.join(KEYS_DIR, `${req.params.service}.json`);
   if (fs.existsSync(fp)) fs.unlinkSync(fp);
   res.json({ deleted: true });
