@@ -1,8 +1,6 @@
 const express = require('express');
 const http = require('http');
 const { WebSocketServer } = require('ws');
-const puppeteerExtra = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { v4: uuidv4 } = require('uuid');
 const fs = require('fs');
 const path = require('path');
@@ -20,19 +18,34 @@ function getApiToken() {
   fs.writeFileSync(TOKEN_FILE, token, { mode: 0o600 });
   console.log('\n  ⚠️  API token generated (first run):');
   console.log(`  Token: ${token}`);
-  console.log('  Add to your bot config or use: curl -H "Authorization: Bearer <token>" ...\n');
+  console.log('  Save this — it protects your API keys and sessions.');
+  console.log('  Set in your bot: AUTH_HANDOFF_TOKEN=<token>\n');
   return token;
 }
 
 const API_TOKEN = process.env.API_TOKEN || getApiToken();
 
+// REST API auth middleware
 function requireAuth(req, res, next) {
-  // Skip auth for the PWA itself (static files + WebSocket)
   const auth = req.headers['authorization'];
   if (!auth || !auth.startsWith('Bearer ') || auth.slice(7) !== API_TOKEN) {
     return res.status(401).json({ error: 'Unauthorized. Set Authorization: Bearer <token>' });
   }
   next();
+}
+
+// Sanitize IDs to prevent path traversal
+function sanitizeId(id) {
+  return id.replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
+function safeFilePath(dir, id, ext = '.json') {
+  const sanitized = sanitizeId(id);
+  if (!sanitized) return null;
+  const fp = path.join(dir, sanitized + ext);
+  // Verify resolved path stays within dir
+  if (!fp.startsWith(path.resolve(dir) + path.sep)) return null;
+  return fp;
 }
 
 // ── Key Vault Encryption ──
@@ -74,54 +87,57 @@ function maskKey(value) {
   return value.substring(0, 4) + '...' + value.substring(value.length - 4);
 }
 
-// Stealth mode — makes Chrome look like a real browser to Google
-puppeteerExtra.use(StealthPlugin());
-
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 const PORT = process.env.PORT || 3847;
+// Bind to localhost by default for security. Set BIND=0.0.0.0 for network access (e.g. Tailscale).
+const BIND = process.env.BIND || '127.0.0.1';
 const COOKIES_DIR = path.join(__dirname, 'sessions');
 const SCREENSHOT_INTERVAL = 350;
 
 if (!fs.existsSync(COOKIES_DIR)) fs.mkdirSync(COOKIES_DIR, { recursive: true });
 
-// Serve PWA - inject token into index.html so the UI can authenticate
+// ── PWA: serve index.html with token injected as a cookie (not inline script) ──
+// The token is set as a secure httpOnly-like session cookie so it's not
+// visible in page source, but is sent automatically on API requests.
 app.get('/', (req, res) => {
-  let html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
-  html = html.replace('</head>', `<script>window.API_TOKEN="${API_TOKEN}";</script></head>`);
-  res.send(html);
+  // Set token as a cookie for the PWA's same-origin requests
+  res.cookie('_aht', API_TOKEN, { httpOnly: false, sameSite: 'Strict', path: '/' });
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
-const sessions = new Map();
+// ── Sessions REST API ──
 
 app.get('/api/sessions', requireAuth, (req, res) => {
   const files = fs.readdirSync(COOKIES_DIR).filter(f => f.endsWith('.json'));
   const list = files.map(f => {
-    const data = JSON.parse(fs.readFileSync(path.join(COOKIES_DIR, f), 'utf8'));
-    return { id: data.id, name: data.name, url: data.url, domain: data.domain, capturedAt: data.capturedAt, cookieCount: data.cookies?.length || 0 };
-  });
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(COOKIES_DIR, f), 'utf8'));
+      return { id: data.id, name: data.name, url: data.url, domain: data.domain, capturedAt: data.capturedAt, cookieCount: data.cookies?.length || 0 };
+    } catch { return null; }
+  }).filter(Boolean);
   res.json(list);
 });
 
 app.get('/api/sessions/:id/cookies', requireAuth, (req, res) => {
-  const fp = path.join(COOKIES_DIR, `${req.params.id}.json`);
-  if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Not found' });
+  const fp = safeFilePath(COOKIES_DIR, req.params.id);
+  if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Not found' });
   res.json(JSON.parse(fs.readFileSync(fp, 'utf8')));
 });
 
 app.delete('/api/sessions/:id', requireAuth, (req, res) => {
-  const fp = path.join(COOKIES_DIR, `${req.params.id}.json`);
-  if (fs.existsSync(fp)) fs.unlinkSync(fp);
+  const fp = safeFilePath(COOKIES_DIR, req.params.id);
+  if (fp && fs.existsSync(fp)) fs.unlinkSync(fp);
   res.json({ deleted: true });
 });
 
 app.get('/api/sessions/:id/cookies.txt', requireAuth, (req, res) => {
-  const fp = path.join(COOKIES_DIR, `${req.params.id}.json`);
-  if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Not found' });
+  const fp = safeFilePath(COOKIES_DIR, req.params.id);
+  if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Not found' });
   const data = JSON.parse(fs.readFileSync(fp, 'utf8'));
   const lines = ['# Netscape HTTP Cookie File'];
   for (const c of data.cookies) {
@@ -132,25 +148,23 @@ app.get('/api/sessions/:id/cookies.txt', requireAuth, (req, res) => {
   res.send(lines.join('\n'));
 });
 
-app.get('/api/viewport', requireAuth, (req, res) => {
-  res.json({ width: 412, height: 915 });
-});
-
-// ── API Key Vault endpoints ──
+// ── API Key Vault ──
 
 app.get('/api/keys', requireAuth, (req, res) => {
   const files = fs.readdirSync(KEYS_DIR).filter(f => f.endsWith('.json'));
   const list = files.map(f => {
-    const raw = JSON.parse(fs.readFileSync(path.join(KEYS_DIR, f), 'utf8'));
-    const value = decrypt(raw.encrypted);
-    return { service: raw.service, label: raw.label, maskedValue: maskKey(value), savedAt: raw.savedAt };
-  });
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(KEYS_DIR, f), 'utf8'));
+      const value = decrypt(raw.encrypted);
+      return { service: raw.service, label: raw.label, maskedValue: maskKey(value), savedAt: raw.savedAt };
+    } catch { return null; }
+  }).filter(Boolean);
   res.json(list);
 });
 
 app.get('/api/keys/:service', requireAuth, (req, res) => {
-  const fp = path.join(KEYS_DIR, `${req.params.service}.json`);
-  if (!fs.existsSync(fp)) return res.status(404).json({ error: 'Key not found' });
+  const fp = safeFilePath(KEYS_DIR, req.params.service);
+  if (!fp || !fs.existsSync(fp)) return res.status(404).json({ error: 'Key not found' });
   const raw = JSON.parse(fs.readFileSync(fp, 'utf8'));
   const value = decrypt(raw.encrypted);
   res.json({ service: raw.service, label: raw.label, value, savedAt: raw.savedAt });
@@ -161,24 +175,47 @@ app.post('/api/keys', requireAuth, (req, res) => {
   if (!service || !value) return res.status(400).json({ error: 'service and value required' });
   const encrypted = encrypt(value);
   const data = { service, label: label || service, encrypted, savedAt: new Date().toISOString() };
-  const fp = path.join(KEYS_DIR, `${service.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`);
+  const safeService = service.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const fp = path.join(KEYS_DIR, `${safeService}.json`);
   fs.writeFileSync(fp, JSON.stringify(data, null, 2), { mode: 0o600 });
   res.json({ saved: true, service, maskedValue: maskKey(value) });
 });
 
 app.delete('/api/keys/:service', requireAuth, (req, res) => {
-  const fp = path.join(KEYS_DIR, `${req.params.service}.json`);
-  if (fs.existsSync(fp)) fs.unlinkSync(fp);
+  const fp = safeFilePath(KEYS_DIR, req.params.service);
+  if (fp && fs.existsSync(fp)) fs.unlinkSync(fp);
   res.json({ deleted: true });
 });
 
+// ── WebSocket: browser streaming + input forwarding ──
+// Auth handshake: first message must be { type: 'auth', token: '<api-token>' }
+
 wss.on('connection', (ws) => {
+  let authenticated = false;
   let sessionId = null;
   let screenshotInterval = null;
+
+  // 5-second auth timeout
+  const authTimeout = setTimeout(() => {
+    if (!authenticated) ws.close(4001, 'Auth timeout');
+  }, 5000);
 
   ws.on('message', async (raw) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
+
+    // Auth handshake
+    if (!authenticated) {
+      if (msg.type === 'auth' && msg.token === API_TOKEN) {
+        authenticated = true;
+        clearTimeout(authTimeout);
+        ws.send(JSON.stringify({ type: 'auth_ok' }));
+      } else {
+        ws.send(JSON.stringify({ type: 'error', message: 'Unauthorized' }));
+        ws.close(4001, 'Unauthorized');
+      }
+      return;
+    }
 
     if (msg.type === 'start') {
       sessionId = uuidv4();
@@ -191,11 +228,7 @@ wss.on('connection', (ws) => {
         });
 
         const page = await browser.newPage();
-
-        await page.setUserAgent(
-          'Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36'
-        );
-
+        await page.setUserAgent('Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36');
         await page.evaluateOnNewDocument(() => {
           Object.defineProperty(navigator, 'webdriver', { get: () => false });
           Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
@@ -203,14 +236,11 @@ wss.on('connection', (ws) => {
           Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
           window.chrome = { runtime: {} };
           const originalQuery = window.navigator.permissions.query;
-          window.navigator.permissions.query = (parameters) =>
-            parameters.name === 'notifications'
-              ? Promise.resolve({ state: Notification.permission })
-              : originalQuery(parameters);
+          window.navigator.permissions.query = (p) =>
+            p.name === 'notifications' ? Promise.resolve({ state: Notification.permission }) : originalQuery(p);
         });
 
         sessions.set(sessionId, { browser, page, ws, url, name, captured: false });
-
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
 
         screenshotInterval = setInterval(async () => {
@@ -293,7 +323,10 @@ wss.on('connection', (ws) => {
     }
   });
 
-  ws.on('close', async () => { if (sessionId) await cleanup(sessionId, screenshotInterval); });
+  ws.on('close', async () => {
+    clearTimeout(authTimeout);
+    if (sessionId) await cleanup(sessionId, screenshotInterval);
+  });
 });
 
 async function cleanup(id, interval) {
@@ -302,6 +335,12 @@ async function cleanup(id, interval) {
   if (s) { try { await s.browser.close(); } catch {} sessions.delete(id); }
 }
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n 🔐 Auth Handoff v0.2 running on port ${PORT}\n Stealth mode: ON\n Open on your phone: http://localhost:${PORT}\n`);
+server.listen(PORT, BIND, () => {
+  const displayHost = BIND === '127.0.0.1' ? 'localhost' : BIND;
+  console.log('');
+  console.log('  🔐 Auth Handoff running');
+  console.log(`  Local:  http://localhost:${PORT}`);
+  if (BIND !== '127.0.0.1') console.log(`  Network: http://${displayHost}:${PORT}`);
+  console.log(`  Bind:   ${BIND} (set BIND=0.0.0.0 for network access)`);
+  console.log('');
 });

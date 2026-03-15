@@ -318,11 +318,12 @@ const SERVICES = [
 
 // ── Utils ──
 
-function authHeaders(extra={}) {
-  return {...extra, 'Authorization': 'Bearer ' + (window.API_TOKEN||'')};
+function getToken() {
+  const m = document.cookie.match(/(?:^|; )_aht=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
 }
 function authFetch(url, opts={}) {
-  opts.headers = authHeaders(opts.headers||{});
+  opts.headers = {...(opts.headers||{}), 'Authorization': 'Bearer ' + getToken()};
   return fetch(url, opts);
 }
 function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');}
@@ -415,8 +416,10 @@ document.getElementById('btnSaveKey').addEventListener('click',async()=>{
 function connectWS(){
   const p=location.protocol==='https:'?'wss:':'ws:';
   ws=new WebSocket(`${p}//${location.host}`);
+  ws.onopen=()=>{ ws.send(JSON.stringify({type:'auth',token:getToken()})); };
   ws.onmessage=(e)=>{
     const m=JSON.parse(e.data);
+    if(m.type==='auth_ok') return;
     if(m.type==='started'){currentSessionId=m.sessionId;document.getElementById('browserStatus').style.display='none';document.getElementById('currentUrl').textContent=m.url;}
     if(m.type==='frame'){
       const canvas=document.getElementById('browserCanvas');
