@@ -1,0 +1,7 @@
+sessions/
+keys/
+.key-salt
+logs/
+*.log
+node_modules/
+.DS_Store

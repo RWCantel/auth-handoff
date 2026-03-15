@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a0a0b">
+<link rel="manifest" href="/manifest.json">
+<title>Auth Handoff v4</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0a0a0b;--sf:#141416;--sf2:#1c1c20;--bd:#2a2a2f;--tx:#e8e8ec;--txd:#7a7a85;--ac:#00d4aa;--acd:#00d4aa22;--dn:#ff4466;--r:14px;--st:env(safe-area-inset-top,0px);--sb:env(safe-area-inset-bottom,0px)}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--tx);font-family:'DM Sans',-apple-system,sans-serif;-webkit-font-smoothing:antialiased;touch-action:manipulation}
+.screen{display:none;flex-direction:column;height:100%;padding-top:var(--st);padding-bottom:var(--sb)}.screen.active{display:flex}
+#home{flex-direction:column;height:100%}
+.home-tabs{display:flex;background:var(--sf);border-bottom:1px solid var(--bd);padding:0 16px;gap:4px;padding-top:calc(var(--st) + 8px);flex-shrink:0}
+.home-tab{flex:1;padding:12px 8px;text-align:center;font-size:13px;font-weight:600;color:var(--txd);border-bottom:2px solid transparent;cursor:pointer;position:relative}
+.home-tab.active{color:var(--ac);border-bottom-color:var(--ac)}
+.tab-badge{background:var(--ac);color:#0a0a0b;font-size:10px;font-weight:700;padding:2px 6px;border-radius:10px;margin-left:6px}
+.tab-content{display:none;flex:1;overflow-y:auto;padding:20px 16px;gap:20px;flex-direction:column}
+.tab-content.active{display:flex}
+.logo{display:flex;align-items:center;gap:12px;margin-bottom:4px}
+.logo-icon{width:40px;height:40px;background:var(--ac);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.logo h1{font-family:'JetBrains Mono',monospace;font-size:18px;font-weight:700;letter-spacing:-.5px}
+.logo p{font-size:12px;color:var(--txd);margin-top:2px}
+.input-section{background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);padding:16px}
+.input-section label{font-size:11px;font-weight:600;color:var(--txd);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:10px}
+.url-input-wrap{display:flex;gap:8px}
+.url-input-wrap input{flex:1;background:var(--sf2);border:1px solid var(--bd);border-radius:10px;padding:12px 14px;color:var(--tx);font-family:'JetBrains Mono',monospace;font-size:13px;outline:none}
+.url-input-wrap input:focus{border-color:var(--ac)}
+.url-input-wrap input::placeholder{color:var(--txd);opacity:.5}
+.btn-go{background:var(--ac);border:none;border-radius:10px;padding:12px 18px;color:#0a0a0b;font-family:'DM Sans',sans-serif;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap}
+.btn-go:active{opacity:.7}
+.quick-links{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.quick-link{background:var(--acd);border:1px solid #00d4aa33;border-radius:8px;padding:6px 12px;color:var(--ac);font-size:12px;font-weight:500;cursor:pointer}
+.quick-link:active{opacity:.7}
+.section-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.section-title{font-size:12px;font-weight:600;color:var(--txd);text-transform:uppercase;letter-spacing:1px}
+.count-badge{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--txd);background:var(--sf);padding:3px 8px;border-radius:20px;border:1px solid var(--bd)}
+.item-card{background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);padding:14px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.item-info h3{font-size:14px;font-weight:600;margin-bottom:3px}
+.item-meta{font-size:11px;color:var(--txd);font-family:'JetBrains Mono',monospace}
+.item-dot{width:8px;height:8px;border-radius:50%;background:var(--ac);box-shadow:0 0 6px var(--ac);flex-shrink:0}
+.btn-delete{background:#ff446622;border:none;border-radius:8px;padding:6px 10px;color:var(--dn);font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap}
+.empty-state{text-align:center;padding:32px 20px;color:var(--txd)}.empty-state .icon{font-size:36px;margin-bottom:10px}.empty-state p{font-size:13px;line-height:1.6}
+.btn-add{width:100%;background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);padding:14px;color:var(--ac);font-weight:600;font-size:14px;cursor:pointer;text-align:center;font-family:'DM Sans',sans-serif}
+.btn-add:active{opacity:.7}
+
+/* Browser view */
+#browser-view{background:#000;position:relative}
+.browser-toolbar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--sf);border-bottom:1px solid var(--bd);min-height:48px;flex-shrink:0;padding-top:calc(var(--st) + 8px)}
+.browser-url{flex:1;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--txd);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--sf2);padding:8px 12px;border-radius:8px;border:1px solid var(--bd)}
+.toolbar-btn{background:var(--sf2);border:1px solid var(--bd);border-radius:8px;padding:8px;color:var(--tx);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;width:36px;height:36px;flex-shrink:0}
+.toolbar-btn:active{opacity:.7}
+.browser-canvas-wrap{flex:1;overflow:hidden;position:relative;background:#111}
+#browserCanvas{display:block;width:100%;height:100%;object-fit:contain;touch-action:none}
+.browser-status{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:var(--txd)}
+.spinner{width:32px;height:32px;border:3px solid var(--bd);border-top-color:var(--ac);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.browser-controls{display:flex;gap:6px;padding:10px 12px;background:var(--sf);border-top:1px solid var(--bd);flex-shrink:0;padding-bottom:calc(10px + var(--sb))}
+.ctrl-btn{flex:1;background:var(--sf2);border:1px solid var(--bd);border-radius:10px;padding:10px 6px;color:var(--tx);font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;cursor:pointer;text-align:center}
+.ctrl-btn:active{transform:scale(.96)}
+.ctrl-btn .ctrl-icon{font-size:16px;display:block;margin-bottom:2px}
+.ctrl-btn.capture{background:var(--ac);color:#0a0a0b;border-color:var(--ac)}
+.ctrl-btn.close-btn{background:#ff446622;color:var(--dn);border-color:#ff446644;flex:.5}
+
+/* Input modal */
+.modal{display:none;position:fixed;bottom:0;left:0;right:0;background:var(--sf);border-top:1px solid var(--bd);padding:16px;padding-bottom:calc(16px + var(--sb));z-index:100;animation:slideUp .2s ease}
+.modal.active{display:block}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.modal-row{display:flex;gap:8px;margin-bottom:8px}
+.modal input,.modal select,.modal textarea{flex:1;background:var(--sf2);border:1px solid var(--bd);border-radius:10px;padding:13px 14px;color:var(--tx);font-size:15px;outline:none;font-family:'DM Sans',sans-serif}
+.modal input:focus,.modal select:focus{border-color:var(--ac)}
+.modal input::placeholder{color:var(--txd);opacity:.5}
+.modal select{appearance:none}
+.modal button{background:var(--ac);border:none;border-radius:10px;padding:13px 16px;color:#0a0a0b;font-weight:700;cursor:pointer;white-space:nowrap;font-family:'DM Sans',sans-serif}
+.modal-hint{font-size:11px;color:var(--txd);text-align:center;margin-top:4px}
+.modal-dismiss{background:var(--sf2);border:1px solid var(--bd);border-radius:10px;padding:13px 14px;color:var(--txd);font-size:16px;cursor:pointer;flex-shrink:0}
+
+/* API Key modal */
+#keyModal{padding:20px;padding-bottom:calc(20px + var(--sb))}
+#keyModal h3{font-size:16px;font-weight:700;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center}
+#keyModal h3 button{background:none;border:none;color:var(--txd);font-size:20px;cursor:pointer;padding:4px}
+.service-search{width:100%;background:var(--sf2);border:1px solid var(--bd);border-radius:10px;padding:12px 14px;color:var(--tx);font-size:14px;outline:none;margin-bottom:12px}
+.service-search:focus{border-color:var(--ac)}
+.service-group{margin-bottom:16px}
+.service-group-title{font-size:10px;font-weight:700;color:var(--txd);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:8px}
+.service-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.service-btn{background:var(--sf2);border:1px solid var(--bd);border-radius:10px;padding:10px 6px;text-align:center;cursor:pointer;font-size:11px;font-weight:500;transition:all .15s}
+.service-btn:active,.service-btn.selected{background:var(--acd);border-color:var(--ac);color:var(--ac)}
+.service-btn .svc-icon{font-size:18px;display:block;margin-bottom:4px}
+.key-input-section{margin-top:4px}
+.key-input-section label{font-size:11px;font-weight:600;color:var(--txd);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:8px}
+.key-input-section input{width:100%;background:var(--sf2);border:1px solid var(--bd);border-radius:10px;padding:13px 14px;color:var(--tx);font-size:14px;outline:none;font-family:'JetBrains Mono',monospace;margin-bottom:10px}
+.key-input-section input:focus{border-color:var(--ac)}
+.btn-save-key{width:100%;background:var(--ac);border:none;border-radius:10px;padding:14px;color:#0a0a0b;font-weight:700;font-size:15px;cursor:pointer;font-family:'DM Sans',sans-serif}
+.btn-save-key:disabled{opacity:.4}
+
+/* Captured screen */
+#captured{align-items:center;justify-content:center;padding:40px 24px;text-align:center;gap:16px}
+.captured-icon{width:72px;height:72px;background:var(--acd);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto}
+.captured-title{font-size:22px;font-weight:700}
+.captured-detail{color:var(--txd);font-size:13px;line-height:1.6}
+.captured-api{background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);padding:14px;width:100%;text-align:left}
+.captured-api label{font-size:10px;font-weight:600;color:var(--txd);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px}
+.captured-api code{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--ac);word-break:break-all;line-height:1.6}
+.btn-home{background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:13px 28px;color:var(--tx);font-weight:600;cursor:pointer;font-size:13px;font-family:'DM Sans',sans-serif}
+
+/* Toast */
+.toast{position:fixed;top:calc(var(--st) + 56px + 48px);left:50%;transform:translateX(-50%) translateY(-120%);background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:10px 18px;font-size:13px;font-weight:500;z-index:200;transition:transform .3s ease;white-space:nowrap;pointer-events:none}
+.toast.show{transform:translateX(-50%) translateY(0)}.toast.success{border-color:var(--ac);color:var(--ac)}.toast.error{border-color:var(--dn);color:var(--dn)}
+.tap-dot{position:absolute;width:20px;height:20px;background:rgba(0,212,170,0.5);border:2px solid var(--ac);border-radius:50%;pointer-events:none;transform:translate(-50%,-50%);animation:tapFade 0.6s ease forwards;z-index:50}
+@keyframes tapFade{0%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) scale(2)}}
+</style>
+</head>
+<body>
+<div id="toast" class="toast"></div>
+
+<!-- HOME SCREEN -->
+<div id="home" class="screen active">
+  <div class="home-tabs">
+    <div class="home-tab active" data-tab="sessions">🌐 Sessions <span class="tab-badge" id="sessionBadge">0</span></div>
+    <div class="home-tab" data-tab="apikeys">🔑 API Keys <span class="tab-badge" id="keyBadge">0</span></div>
+  </div>
+
+  <!-- Sessions Tab -->
+  <div class="tab-content active" id="tab-sessions">
+    <div class="logo"><div class="logo-icon">🔐</div><div><h1>Auth Handoff</h1><p>Capture sessions & API keys for your bot.</p></div></div>
+    <div class="input-section">
+      <label>Log into a site</label>
+      <div class="url-input-wrap">
+        <input type="url" id="urlInput" placeholder="https://accounts.google.com" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <button class="btn-go" id="btnGo">Go →</button>
+      </div>
+      <div class="quick-links">
+        <span class="quick-link" data-url="https://accounts.google.com">Google</span>
+        <span class="quick-link" data-url="https://github.com/login">GitHub</span>
+        <span class="quick-link" data-url="https://x.com/login">X / Twitter</span>
+        <span class="quick-link" data-url="https://discord.com/login">Discord</span>
+        <span class="quick-link" data-url="https://login.microsoftonline.com">Microsoft</span>
+        <span class="quick-link" data-url="https://wordpress.com/log-in">WordPress</span>
+        <span class="quick-link" data-url="https://www.reddit.com/login">Reddit</span>
+        <span class="quick-link" data-url="https://www.linkedin.com/login">LinkedIn</span>
+        <span class="quick-link" data-url="https://www.facebook.com/login">Facebook</span>
+        <span class="quick-link" data-url="https://www.instagram.com/accounts/login">Instagram</span>
+        <span class="quick-link" data-url="https://www.tiktok.com/login">TikTok</span>
+        <span class="quick-link" data-url="https://app.slack.com/signin">Slack</span>
+        <span class="quick-link" data-url="https://notion.so/login">Notion</span>
+        <span class="quick-link" data-url="https://airtable.com/login">Airtable</span>
+        <span class="quick-link" data-url="https://app.hubspot.com/login">HubSpot</span>
+        <span class="quick-link" data-url="https://dashboard.stripe.com/login">Stripe</span>
+        <span class="quick-link" data-url="https://vercel.com/login">Vercel</span>
+        <span class="quick-link" data-url="https://app.netlify.com/login">Netlify</span>
+        <span class="quick-link" data-url="https://supabase.com/dashboard">Supabase</span>
+        <span class="quick-link" data-url="https://app.postiz.com/auth/signin">Postiz</span>
+        <span class="quick-link" data-url="https://mailchimp.com/login">Mailchimp</span>
+        <span class="quick-link" data-url="https://www.producthunt.com/login">Product Hunt</span>
+        <span class="quick-link" data-url="https://app.intercom.com/admins/sign_in">Intercom</span>
+        <span class="quick-link" data-url="https://analytics.google.com">Google Analytics</span>
+        <span class="quick-link" data-url="https://search.google.com/search-console">Search Console</span>
+      </div>
+    </div>
+    <div>
+      <div class="section-header"><span class="section-title">Captured Sessions</span><span class="count-badge" id="sessionCount">0</span></div>
+      <div id="sessionsList"></div>
+    </div>
+  </div>
+
+  <!-- API Keys Tab -->
+  <div class="tab-content" id="tab-apikeys">
+    <div>
+      <div class="section-header"><span class="section-title">Stored API Keys</span><span class="count-badge" id="keyCount">0</span></div>
+      <div id="keysList"></div>
+      <button class="btn-add" id="btnAddKey" style="margin-top:10px">+ Add API Key</button>
+    </div>
+    <div style="background:var(--sf);border:1px solid var(--bd);border-radius:var(--r);padding:16px">
+      <div style="font-size:11px;font-weight:600;color:var(--txd);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Bot API</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--txd);line-height:2">
+        GET /api/keys<br>
+        GET /api/keys/:service<br>
+        POST /api/keys<br>
+        DELETE /api/keys/:service
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- BROWSER VIEW -->
+<div id="browser-view" class="screen">
+  <div class="browser-toolbar">
+    <button class="toolbar-btn" id="btnBack">←</button>
+    <div class="browser-url" id="currentUrl">Loading...</div>
+    <button class="toolbar-btn" id="btnRefresh">↻</button>
+  </div>
+  <div class="browser-canvas-wrap" id="canvasWrap">
+    <canvas id="browserCanvas"></canvas>
+    <div class="browser-status" id="browserStatus"><div class="spinner"></div><div>Opening browser...</div></div>
+  </div>
+  <div class="browser-controls">
+    <button class="ctrl-btn close-btn" id="btnClose"><span class="ctrl-icon">✕</span>Close</button>
+    <button class="ctrl-btn" id="btnType"><span class="ctrl-icon">⌨</span>Type</button>
+    <button class="ctrl-btn" id="btnScroll"><span class="ctrl-icon">↕</span>Scroll</button>
+    <button class="ctrl-btn capture" id="btnCapture"><span class="ctrl-icon">✓</span>Capture</button>
+  </div>
+  <div id="inputModal" class="modal">
+    <div class="modal-row">
+      <button class="modal-dismiss" id="btnDismissKeyboard">✕</button>
+      <input type="text" id="typeInput" placeholder="Type here..." autocapitalize="off" autocomplete="off">
+      <button id="btnSendType">Send</button>
+    </div>
+    <div class="modal-hint">Long-press Send for Enter key</div>
+  </div>
+</div>
+
+<!-- CAPTURED SCREEN -->
+<div id="captured" class="screen">
+  <div class="captured-icon">✓</div>
+  <h2 class="captured-title">Session Captured</h2>
+  <p class="captured-detail" id="capturedDetail">—</p>
+  <div class="captured-api"><label>Bot API Endpoint</label><code id="capturedEndpoint">—</code></div>
+  <div class="captured-api"><label>cURL</label><code id="capturedCurl">—</code></div>
+  <button class="btn-home" id="btnBackHome">← Back to Home</button>
+</div>
+
+<!-- API KEY MODAL -->
+<div id="keyModal" class="modal" style="max-height:90vh;overflow-y:auto;border-radius:var(--r) var(--r) 0 0">
+  <h3>Add API Key <button id="btnCloseKeyModal">✕</button></h3>
+  <input type="text" class="service-search" id="serviceSearch" placeholder="Search services...">
+  <div id="serviceList"></div>
+  <div class="key-input-section" id="keyInputSection" style="display:none">
+    <label>API Key for <span id="selectedServiceName">—</span></label>
+    <input type="password" id="keyValueInput" placeholder="Paste your API key here...">
+    <label style="margin-top:2px">Label (optional)</label>
+    <input type="text" id="keyLabelInput" placeholder="e.g. production, personal..." style="margin-bottom:14px">
+    <button class="btn-save-key" id="btnSaveKey">Save Key</button>
+  </div>
+</div>
+
+<script>
+// ── State ──
+let ws=null, currentSessionId=null, scrollMode=false, lastTouchY=0;
+let selectedService = null;
+const VIEWPORT_W=412, VIEWPORT_H=915;
+let imgNaturalW=412, imgNaturalH=915;
+
+// ── Services catalog ──
+const SERVICES = [
+  { group:'AI & LLM', items:[
+    {id:'openai',name:'OpenAI',icon:'🤖'},
+    {id:'anthropic',name:'Anthropic',icon:'🧠'},
+    {id:'gemini',name:'Gemini',icon:'♊'},
+    {id:'mistral',name:'Mistral',icon:'💨'},
+    {id:'groq',name:'Groq',icon:'⚡'},
+    {id:'together',name:'Together AI',icon:'🤝'},
+    {id:'perplexity',name:'Perplexity',icon:'🔍'},
+    {id:'xai',name:'xAI / Grok',icon:'𝕏'},
+    {id:'cohere',name:'Cohere',icon:'🌀'},
+    {id:'huggingface',name:'HuggingFace',icon:'🤗'},
+    {id:'elevenlabs',name:'ElevenLabs',icon:'🎙️'},
+    {id:'replicate',name:'Replicate',icon:'♻️'},
+    {id:'stability',name:'Stability AI',icon:'🎨'},
+  ]},
+  { group:'Marketing', items:[
+    {id:'postiz',name:'Postiz',icon:'📅'},
+    {id:'buffer',name:'Buffer',icon:'📊'},
+    {id:'mailchimp',name:'Mailchimp',icon:'🐒'},
+    {id:'sendgrid',name:'SendGrid',icon:'📧'},
+    {id:'resend',name:'Resend',icon:'✉️'},
+    {id:'loops',name:'Loops',icon:'🔄'},
+    {id:'beehiiv',name:'Beehiiv',icon:'🐝'},
+  ]},
+  { group:'Analytics & SEO', items:[
+    {id:'ahrefs',name:'Ahrefs',icon:'📈'},
+    {id:'semrush',name:'SEMrush',icon:'🔎'},
+    {id:'plausible',name:'Plausible',icon:'📉'},
+    {id:'posthog',name:'PostHog',icon:'🦔'},
+    {id:'mixpanel',name:'Mixpanel',icon:'🎯'},
+    {id:'fathom',name:'Fathom',icon:'⚓'},
+  ]},
+  { group:'Payments', items:[
+    {id:'stripe',name:'Stripe',icon:'💳'},
+    {id:'lemonsqueezy',name:'Lemon Squeezy',icon:'🍋'},
+    {id:'paddle',name:'Paddle',icon:'🏓'},
+    {id:'revenuecat',name:'RevenueCat',icon:'🐱'},
+  ]},
+  { group:'Dev Tools', items:[
+    {id:'github',name:'GitHub',icon:'🐙'},
+    {id:'vercel',name:'Vercel',icon:'▲'},
+    {id:'netlify',name:'Netlify',icon:'🌐'},
+    {id:'supabase',name:'Supabase',icon:'⚡'},
+    {id:'neon',name:'Neon',icon:'💚'},
+    {id:'railway',name:'Railway',icon:'🚂'},
+    {id:'cloudflare',name:'Cloudflare',icon:'🌥️'},
+    {id:'aws',name:'AWS',icon:'☁️'},
+    {id:'flyio',name:'Fly.io',icon:'🪁'},
+    {id:'render',name:'Render',icon:'🎨'},
+    {id:'pinecone',name:'Pinecone',icon:'🌲'},
+    {id:'weaviate',name:'Weaviate',icon:'🕸️'},
+  ]},
+  { group:'Comms', items:[
+    {id:'twilio',name:'Twilio',icon:'📱'},
+    {id:'slack',name:'Slack',icon:'💬'},
+    {id:'discord',name:'Discord Bot',icon:'🎮'},
+    {id:'telegram',name:'Telegram Bot',icon:'✈️'},
+    {id:'intercom',name:'Intercom',icon:'💬'},
+  ]},
+  { group:'Storage & Media', items:[
+    {id:'cloudinary',name:'Cloudinary',icon:'☁️'},
+    {id:'uploadthing',name:'Uploadthing',icon:'📤'},
+    {id:'backblaze',name:'Backblaze',icon:'🔥'},
+  ]},
+  { group:'Other', items:[
+    {id:'custom',name:'Custom',icon:'⚙️'},
+  ]},
+];
+
+// ── Utils ──
+function showScreen(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active');}
+function toast(m,t='success'){const e=document.getElementById('toast');e.textContent=m;e.className=`toast ${t} show`;setTimeout(()=>e.classList.remove('show'),2500);}
+function timeAgo(iso){const d=Date.now()-new Date(iso).getTime(),m=Math.floor(d/60000);if(m<1)return'just now';if(m<60)return m+'m ago';const h=Math.floor(m/60);if(h<24)return h+'h ago';return Math.floor(h/24)+'d ago';}
+
+// ── Tab switching ──
+document.querySelectorAll('.home-tab').forEach(tab=>{
+  tab.addEventListener('click',()=>{
+    document.querySelectorAll('.home-tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-'+tab.dataset.tab).classList.add('active');
+  });
+});
+
+// ── Sessions ──
+async function loadSessions(){
+  try{
+    const r=await fetch('/api/sessions'),s=await r.json();
+    document.getElementById('sessionCount').textContent=s.length;
+    document.getElementById('sessionBadge').textContent=s.length;
+    const l=document.getElementById('sessionsList');
+    if(!s.length){l.innerHTML='<div class="empty-state"><div class="icon">🌐</div><p>No sessions yet.<br>Log in above and tap Capture.</p></div>';return;}
+    l.innerHTML=s.map(x=>`<div class="item-card"><div class="item-info"><h3>${x.domain||x.name}</h3><span class="item-meta">${x.cookieCount} cookies · ${timeAgo(x.capturedAt)}</span></div><div style="display:flex;gap:8px;align-items:center"><button class="btn-delete" onclick="deleteSession('${x.id}')">Delete</button><div class="item-dot"></div></div></div>`).join('');
+  }catch{}
+}
+async function deleteSession(id){await fetch(`/api/sessions/${id}`,{method:'DELETE'});toast('Deleted');loadSessions();}
+
+// ── API Keys ──
+function renderServiceList(filter=''){
+  const container=document.getElementById('serviceList');
+  const lower=filter.toLowerCase();
+  let html='';
+  for(const group of SERVICES){
+    const items=filter?group.items.filter(i=>i.name.toLowerCase().includes(lower)):group.items;
+    if(!items.length)continue;
+    html+=`<div class="service-group"><div class="service-group-title">${group.group}</div><div class="service-grid">`;
+    html+=items.map(i=>`<div class="service-btn${selectedService?.id===i.id?' selected':''}" onclick="selectService(${JSON.stringify(i).replace(/"/g,'&quot;')})"><span class="svc-icon">${i.icon}</span>${i.name}</div>`).join('');
+    html+='</div></div>';
+  }
+  container.innerHTML=html||'<div style="color:var(--txd);text-align:center;padding:20px;font-size:13px">No services found</div>';
+}
+
+function selectService(svc){
+  selectedService=svc;
+  document.querySelectorAll('.service-btn').forEach(b=>b.classList.remove('selected'));
+  event.currentTarget.classList.add('selected');
+  document.getElementById('selectedServiceName').textContent=svc.name;
+  document.getElementById('keyInputSection').style.display='block';
+  document.getElementById('keyValueInput').focus();
+}
+
+async function loadKeys(){
+  try{
+    const r=await fetch('/api/keys'),keys=await r.json();
+    document.getElementById('keyCount').textContent=keys.length;
+    document.getElementById('keyBadge').textContent=keys.length;
+    const l=document.getElementById('keysList');
+    if(!keys.length){l.innerHTML='<div class="empty-state"><div class="icon">🔑</div><p>No API keys yet.<br>Tap Add API Key below.</p></div>';return;}
+    l.innerHTML=keys.map(k=>`<div class="item-card"><div class="item-info"><h3>${k.label||k.service}</h3><span class="item-meta" style="font-size:10px">${k.maskedValue} · ${timeAgo(k.savedAt)}</span></div><div style="display:flex;gap:8px;align-items:center"><button class="btn-delete" onclick="deleteKey('${k.service}')">Delete</button><div class="item-dot"></div></div></div>`).join('');
+  }catch{}
+}
+async function deleteKey(service){await fetch(`/api/keys/${service}`,{method:'DELETE'});toast('Key deleted');loadKeys();}
+
+document.getElementById('btnAddKey').addEventListener('click',()=>{
+  selectedService=null;
+  document.getElementById('keyValueInput').value='';
+  document.getElementById('keyLabelInput').value='';
+  document.getElementById('keyInputSection').style.display='none';
+  document.getElementById('serviceSearch').value='';
+  renderServiceList();
+  document.getElementById('keyModal').classList.add('active');
+});
+document.getElementById('btnCloseKeyModal').addEventListener('click',()=>document.getElementById('keyModal').classList.remove('active'));
+document.getElementById('serviceSearch').addEventListener('input',e=>renderServiceList(e.target.value));
+
+document.getElementById('btnSaveKey').addEventListener('click',async()=>{
+  if(!selectedService)return toast('Pick a service first','error');
+  const value=document.getElementById('keyValueInput').value.trim();
+  if(!value)return toast('Enter an API key','error');
+  const label=document.getElementById('keyLabelInput').value.trim()||selectedService.name;
+  const r=await fetch('/api/keys',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({service:selectedService.id,label,value})});
+  if(r.ok){toast('Key saved');document.getElementById('keyModal').classList.remove('active');loadKeys();}
+  else toast('Failed to save','error');
+});
+
+// ── WebSocket ──
+function connectWS(){
+  const p=location.protocol==='https:'?'wss:':'ws:';
+  ws=new WebSocket(`${p}//${location.host}`);
+  ws.onmessage=(e)=>{
+    const m=JSON.parse(e.data);
+    if(m.type==='started'){currentSessionId=m.sessionId;document.getElementById('browserStatus').style.display='none';document.getElementById('currentUrl').textContent=m.url;}
+    if(m.type==='frame'){
+      const canvas=document.getElementById('browserCanvas');
+      const ctx=canvas.getContext('2d');
+      const img=new Image();
+      img.onload=()=>{imgNaturalW=img.width;imgNaturalH=img.height;if(canvas.width!==img.width||canvas.height!==img.height){canvas.width=img.width;canvas.height=img.height;}ctx.drawImage(img,0,0);};
+      img.src='data:image/jpeg;base64,'+m.data;
+      if(m.url)document.getElementById('currentUrl').textContent=m.url;
+    }
+    if(m.type==='captured')showCaptured(m);
+    if(m.type==='error')toast(m.message,'error');
+  };
+  ws.onclose=()=>setTimeout(connectWS,2000);
+}
+
+function mapTouchToViewport(touchX,touchY){
+  const canvas=document.getElementById('browserCanvas');
+  const rect=canvas.getBoundingClientRect();
+  const elemW=rect.width,elemH=rect.height;
+  const imgAspect=imgNaturalW/imgNaturalH,elemAspect=elemW/elemH;
+  let renderW,renderH,offsetX,offsetY;
+  if(imgAspect>elemAspect){renderW=elemW;renderH=elemW/imgAspect;offsetX=0;offsetY=(elemH-renderH)/2;}
+  else{renderH=elemH;renderW=elemH*imgAspect;offsetX=(elemW-renderW)/2;offsetY=0;}
+  const relX=touchX-rect.left-offsetX,relY=touchY-rect.top-offsetY;
+  const normX=relX/renderW,normY=relY/renderH;
+  return{x:Math.round(normX*VIEWPORT_W),y:Math.round(normY*VIEWPORT_H),valid:normX>=0&&normX<=1&&normY>=0&&normY<=1};
+}
+
+function startSession(url){
+  if(!url)return;
+  if(!url.startsWith('http'))url='https://'+url;
+  showScreen('browser-view');
+  document.getElementById('browserStatus').style.display='';
+  document.getElementById('browserCanvas').getContext('2d').clearRect(0,0,9999,9999);
+  if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'start',url,name:new URL(url).hostname}));
+}
+
+const canvas=document.getElementById('browserCanvas');
+const canvasWrap=document.getElementById('canvasWrap');
+canvas.addEventListener('touchstart',(e)=>{if(scrollMode){lastTouchY=e.touches[0].clientY;return;}e.preventDefault();},{passive:false});
+canvas.addEventListener('touchend',(e)=>{
+  if(scrollMode)return;e.preventDefault();
+  const touch=e.changedTouches[0];
+  const mapped=mapTouchToViewport(touch.clientX,touch.clientY);
+  if(!mapped.valid)return;
+  const dot=document.createElement('div');dot.className='tap-dot';
+  const wrap=canvasWrap.getBoundingClientRect();
+  dot.style.left=touch.clientX-wrap.left+'px';
+  dot.style.top=Math.max(8, touch.clientY-wrap.top)+'px';
+  canvasWrap.appendChild(dot);setTimeout(()=>dot.remove(),600);
+  if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'click',x:mapped.x,y:mapped.y}));
+},{passive:false});
+canvas.addEventListener('touchmove',(e)=>{
+  if(!scrollMode)return;e.preventDefault();
+  const dy=lastTouchY-e.touches[0].clientY;lastTouchY=e.touches[0].clientY;
+  if(ws&&ws.readyState===1&&Math.abs(dy)>2)ws.send(JSON.stringify({type:'scroll',deltaY:dy*3}));
+},{passive:false});
+
+document.getElementById('btnGo').addEventListener('click',()=>startSession(document.getElementById('urlInput').value||'https://accounts.google.com'));
+document.getElementById('urlInput').addEventListener('keydown',(e)=>{if(e.key==='Enter')startSession(e.target.value||'https://accounts.google.com');});
+document.querySelectorAll('.quick-link').forEach(el=>el.addEventListener('click',()=>{document.getElementById('urlInput').value=el.dataset.url;startSession(el.dataset.url);}));
+document.getElementById('btnCapture').addEventListener('click',()=>{if(ws&&ws.readyState===1){ws.send(JSON.stringify({type:'capture'}));toast('Capturing...');}});
+document.getElementById('btnClose').addEventListener('click',()=>{if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'close'}));document.getElementById('inputModal').classList.remove('active');showScreen('home');loadSessions();loadKeys();});
+document.getElementById('btnBack').addEventListener('click',()=>{if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'goBack'}));});
+document.getElementById('btnRefresh').addEventListener('click',()=>{const u=document.getElementById('currentUrl').textContent;if(ws&&ws.readyState===1&&u)ws.send(JSON.stringify({type:'navigate',url:u}));});
+
+const inputModal=document.getElementById('inputModal'),typeInput=document.getElementById('typeInput');
+document.getElementById('btnType').addEventListener('click',()=>{const o=inputModal.classList.contains('active');if(o)inputModal.classList.remove('active');else{inputModal.classList.add('active');typeInput.value='';typeInput.focus();}});
+document.getElementById('btnDismissKeyboard').addEventListener('click',()=>{inputModal.classList.remove('active');typeInput.blur();});
+document.getElementById('btnSendType').addEventListener('click',()=>{const t=typeInput.value;if(t&&ws&&ws.readyState===1){ws.send(JSON.stringify({type:'type',text:t}));typeInput.value='';toast('Typed: '+t.substring(0,20));}});
+let spt;
+document.getElementById('btnSendType').addEventListener('touchstart',()=>{spt=setTimeout(()=>{if(ws&&ws.readyState===1){ws.send(JSON.stringify({type:'key',key:'Enter'}));toast('↵ Enter');}},500);});
+document.getElementById('btnSendType').addEventListener('touchend',()=>clearTimeout(spt));
+typeInput.addEventListener('keydown',(e)=>{if(e.key==='Enter'){const t=typeInput.value;if(t&&ws&&ws.readyState===1){ws.send(JSON.stringify({type:'type',text:t}));typeInput.value='';}if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'key',key:'Enter'}));}});
+
+const btnScroll=document.getElementById('btnScroll');
+btnScroll.addEventListener('click',()=>{scrollMode=!scrollMode;btnScroll.style.background=scrollMode?'var(--ac)':'';btnScroll.style.color=scrollMode?'#0a0a0b':'';btnScroll.style.borderColor=scrollMode?'var(--ac)':'';toast(scrollMode?'Scroll ON':'Scroll OFF');});
+
+function showCaptured(m){
+  showScreen('captured');
+  document.getElementById('capturedDetail').textContent=`${m.domain} — ${m.cookieCount} cookies`;
+  const b=location.origin,ep=`${b}/api/sessions/${m.sessionId}/cookies`;
+  document.getElementById('capturedEndpoint').textContent=ep;
+  document.getElementById('capturedCurl').textContent=`curl ${ep}`;
+  if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'close'}));
+}
+document.getElementById('btnBackHome').addEventListener('click',()=>{showScreen('home');loadSessions();loadKeys();});
+
+// ── Init ──
+connectWS();
+loadSessions();
+loadKeys();
+renderServiceList();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
+</script>
+</body>
+</html>
