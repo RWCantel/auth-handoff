@@ -96,6 +96,7 @@ const PORT = process.env.PORT || 3847;
 const BIND = process.env.BIND || '127.0.0.1';
 const COOKIES_DIR = path.join(__dirname, 'sessions');
 const SCREENSHOT_INTERVAL = 350;
+const sessions = new Map();
 
 if (!fs.existsSync(COOKIES_DIR)) fs.mkdirSync(COOKIES_DIR, { recursive: true });
 
